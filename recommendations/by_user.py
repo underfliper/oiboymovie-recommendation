@@ -55,6 +55,7 @@ def recommend_movies(id, transform, top):
         predicted.append(dict(id=item, rating=predicted_movie_rating))
 
     result = sorted(predicted, key=itemgetter('rating'), reverse=True)
+    result = np.array([x['id'] for x in result])[:15].tolist()
 
     return result
 

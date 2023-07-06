@@ -56,6 +56,4 @@ def recommend_by_movie(connection, movieId):
 
     recommended_movies = recommend_movies(movieId, movies, transform_result)
 
-    recommended_movies.info()
-
-    return recommended_movies.to_json(orient="records")
+    return recommended_movies['id'].to_json(orient="records")
