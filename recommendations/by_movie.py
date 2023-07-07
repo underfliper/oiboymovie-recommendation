@@ -27,21 +27,11 @@ def recommend_movies(id, data, transform):
 
     movie_indices = [i[0] for i in sim_scores]
 
-    recommendation_data = pd.DataFrame()
-
-    recommendation_data['id'] = data['id'].iloc[movie_indices]
-    recommendation_data['poster_path'] = data['poster_path'].iloc[movie_indices]
-    recommendation_data['release_date'] = data['release_date'].iloc[movie_indices].apply(
-        lambda x: x.strftime('%Y-%m-%dT%H:%M:%S.000Z'))
-    recommendation_data['runtime'] = data['runtime'].iloc[movie_indices]
-    recommendation_data['title'] = data['title'].iloc[movie_indices]
-    recommendation_data['vote_average'] = data['vote_average'].iloc[movie_indices]
-
-    return recommendation_data
+    return data['id'].iloc[movie_indices].values.tolist()
 
 
 def recommend_by_movie(connection, movieId):
-    SELECT_MOVIES = """SELECT id, poster_path, release_date, runtime, title, vote_average, overview, keywords.words
+    SELECT_MOVIES = """SELECT id, overview, keywords.words
     FROM movies JOIN keywords ON movies.id=keywords.\"movieId\""""
 
     with connection:
@@ -49,11 +39,11 @@ def recommend_by_movie(connection, movieId):
             cursor.execute(SELECT_MOVIES)
             result = cursor.fetchall()
             movies = pd.DataFrame(
-                result, columns=['id', 'poster_path', 'release_date', 'runtime', 'title', 'vote_average', 'overview', 'keywords'])
+                result, columns=['id', 'overview', 'keywords'])
 
     movies['keywords'] = movies['keywords'].fillna('')
     transform_result = transform_data(movies['keywords'], movies['overview'])
 
     recommended_movies = recommend_movies(movieId, movies, transform_result)
 
-    return recommended_movies['id'].to_json(orient="records")
+    return recommended_movies
