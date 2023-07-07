@@ -19,5 +19,5 @@ def get_recommendations_by_movie(movie_id):
 
 
 @app.get("/recommendations/by-user/<int:user_id>")
-def get_recommendations_by_user(user_id):
-    return recommend_by_user(connection, user_id)
+async def get_recommendations_by_user(user_id):
+    return await recommend_by_user(connection, user_id)

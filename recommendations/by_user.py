@@ -1,7 +1,7 @@
-from flask import jsonify
+import asyncio
+from operator import itemgetter
 import numpy as np
 import pandas as pd
-from operator import itemgetter
 from sklearn.metrics.pairwise import pairwise_distances
 
 
@@ -16,51 +16,58 @@ def transform_data(data):
     return data_matrix
 
 
-def recommend_movies(id, transform, top):
-    user_similarity = pairwise_distances(transform, metric='cosine')
-    top_sim_users = user_similarity[id - 1].argsort()[1:top + 1]
+async def predict(userId, movieId, data_matrix, similarity_matrix, top_sim_users, user_mean_rating):
+    indexes = top_sim_users.astype(np.intc)
+    numerator = 1 - similarity_matrix[userId - 1][indexes]
+
+    mean_ratings = []
+    for i in data_matrix[indexes]:
+        mean_ratings.append(np.array([x for x in i if x > 0]).mean())
+
+    diff_ratings = np.array([x[movieId]
+                            for x in data_matrix[indexes]]) - mean_ratings
+    numerator = numerator.dot(diff_ratings)
+    denominator = np.absolute(1 - similarity_matrix[userId - 1][indexes]).sum()
+
+    predicted_movie_rating = user_mean_rating + numerator / denominator
+
+    return dict(id=movieId + 1, rating=predicted_movie_rating)
+
+
+async def recommend(userId, ratings):
+    data_matrix = transform_data(ratings)
+    similarity_matrix = pairwise_distances(data_matrix, metric='cosine')
+    top_sim_users = similarity_matrix[userId - 1].argsort()[1:16]
 
     user_movies = []
-    for j in range(len(transform[id - 1])):
-        if (transform[id - 1][j] > 0):
+    for j in range(len(data_matrix[userId - 1])):
+        if (data_matrix[userId - 1][j] > 0):
             user_movies.append(j)
 
-    movies = []
+    movies_for_predict = []
     for item in top_sim_users:
-        for j in range(len(transform[item])):
-            if (transform[item][j] > 0):
+        for j in range(len(data_matrix[item])):
+            if (data_matrix[item][j] > 0):
                 if j not in user_movies:
-                    movies.append(j)
+                    movies_for_predict.append(j)
 
-    movies = list(set(movies))
-
+    movies_for_predict = list(set(movies_for_predict))
     user_mean_rating = np.array(
-        [x for x in transform[id-1] if x > 0]).mean()
-    predicted = []
-    for item in movies:
-        indexes = top_sim_users.astype(np.intc)
-        numerator = 1 - user_similarity[id - 1][indexes]
+        [x for x in data_matrix[userId-1] if x > 0]).mean()
 
-        mean_ratings = []
-        for i in transform[indexes]:
-            mean_ratings.append(np.array([x for x in i if x > 0]).mean())
+    tasks = []
+    for movie in movies_for_predict:
+        task = asyncio.create_task(predict(
+            userId, movie, data_matrix, similarity_matrix, top_sim_users, user_mean_rating))
+        tasks.append(task)
 
-        diff_ratings = np.array([x[item]
-                                for x in transform[indexes]]) - mean_ratings
-        numerator = numerator.dot(diff_ratings)
-        denominator = np.absolute(1 - user_similarity[id - 1][indexes]).sum()
+    predicted = await asyncio.gather(*tasks)
+    predicted = sorted(predicted, key=itemgetter('rating'), reverse=True)
 
-        predicted_movie_rating = user_mean_rating + numerator / denominator
-
-        predicted.append(dict(id=item, rating=predicted_movie_rating))
-
-    result = sorted(predicted, key=itemgetter('rating'), reverse=True)
-    result = np.array([x['id'] for x in result])[:15].tolist()
-
-    return result
+    return np.array([x['id'] for x in predicted])[:15].tolist()
 
 
-def recommend_by_user(connection, userId):
+async def recommend_by_user(connection, userId):
     SELECT_RATINGS = """SELECT "userId", "movieId", rating FROM public.reviews
     ORDER BY "userId" ASC, "movieId" ASC """
 
@@ -71,8 +78,6 @@ def recommend_by_user(connection, userId):
             ratings = pd.DataFrame(
                 result, columns=['userId', 'movieId', 'rating'])
 
-    transform_result = transform_data(ratings)
+    result = await recommend(userId, ratings)
 
-    result = recommend_movies(userId, transform_result, 15)
-
-    return jsonify(result)
+    return result
